@@ -1,113 +1,96 @@
-from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
+from typing import List, Optional
+from qdrant_client.http.models import (
+    Distance,
+    VectorParams,
+    HnswConfigDiff,
+    PointStruct,
+    Filter,
+    FieldCondition,
+    MatchValue,
+)
 from app.core.config import settings
 from app.core.logger import logger
+from app.db.async_qdrant import get_async_qdrant_client
 from app.core.exceptions import QdrantConnectionError
 
-# Initialize Qdrant client
-qdrant_client = QdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
+# Global async client
+client = get_async_qdrant_client()
 
-async def init_qdrant_collection():
+
+async def ensure_collection():
     """
-    Create a Qdrant collection if it doesn't exist.
-    """
-    try:
-        collections = qdrant_client.get_collections().collections
-        existing = [c.name for c in collections]
-
-        if settings.QDRANT_COLLECTION not in existing:
-            logger.info(f"Creating Qdrant collection: {settings.QDRANT_COLLECTION}")
-            qdrant_client.recreate_collection(
-                collection_name=settings.QDRANT_COLLECTION,
-                vectors_config=VectorParams(
-                    size=settings.QDRANT_VECTOR_SIZE,
-                    distance=Distance.COSINE
-                )
-            )
-        else:
-            logger.info(f"Qdrant collection already exists: {settings.QDRANT_COLLECTION}")
-    except Exception as e:
-        logger.error(f"Failed to initialize Qdrant collection: {e}")
-        raise QdrantConnectionError(f"Qdrant initialization failed: {e}")
-
-# async def insert_embeddings(vectors: list, payloads: list):
-#     """
-#     Insert embeddings into Qdrant with associated metadata.
-#     """
-#     try:
-#         points = [
-#             PointStruct(id=i, vector=vectors[i], payload=payloads[i])
-#             for i in range(len(vectors))
-#         ]
-#         qdrant_client.upsert(
-#             collection_name=settings.QDRANT_COLLECTION,
-#             points=points,
-#         )
-#         logger.info(f"Inserted {len(points)} embeddings into Qdrant.")
-#     except Exception as e:
-#         logger.error(f"Failed to insert embeddings: {e}")
-#         raise QdrantConnectionError(f"Qdrant insert failed: {e}")
-
-async def insert_embeddings(vectors: list, payloads: list):
-    """
-    Insert embeddings into Qdrant with validation and associated metadata.
+    Ensure collection exists and create with HNSW config if missing.
     """
     try:
-        # ✅ Safety check: Ensure embeddings are valid
-        for idx, vec in enumerate(vectors):
-            if not isinstance(vec, list):
-                logger.error(f"Invalid vector at index {idx}: Expected list, got {type(vec)}")
-                raise QdrantConnectionError(f"Invalid vector format at index {idx}")
+        existing = await client.get_collections()
+        names = [c.name for c in existing.collections]
 
-            if not all(isinstance(x, (float, int)) for x in vec):
-                logger.error(f"Invalid vector at index {idx}: Vector contains non-float values")
-                raise QdrantConnectionError(f"Invalid vector values at index {idx}")
+        if settings.QDRANT_COLLECTION in names:
+            logger.info("Qdrant collection exists.")
+            return
 
-            if len(vec) != settings.QDRANT_VECTOR_SIZE:
-                logger.error(
-                    f"Vector size mismatch at index {idx}: "
-                    f"Expected {settings.QDRANT_VECTOR_SIZE}, got {len(vec)}"
-                )
-                raise QdrantConnectionError(
-                    f"Vector size mismatch at index {idx}: Expected {settings.QDRANT_VECTOR_SIZE}, got {len(vec)}"
-                )
+        logger.info("Creating Qdrant collection with HNSW settings...")
 
-        # ✅ Create Qdrant points
-        points = [
-            PointStruct(
-                id=payloads[i]["id"],  # Use UUID instead of index for better uniqueness
-                vector=vectors[i],
-                payload=payloads[i]
-            )
-            for i in range(len(vectors))
-        ]
-
-        # ✅ Insert into Qdrant
-        qdrant_client.upsert(
+        await client.recreate_collection(
             collection_name=settings.QDRANT_COLLECTION,
-            points=points,
+            vectors_config=VectorParams(
+                size=settings.QDRANT_VECTOR_SIZE,
+                distance=Distance.COSINE
+                if settings.QDRANT_DISTANCE.upper() == "COSINE"
+                else Distance.EUCLID,
+            ),
+            hnsw_config=HnswConfigDiff(
+                m=settings.QDRANT_HNSW_M,
+                ef_construct=settings.QDRANT_HNSW_EF_CONSTRUCT,
+                full_scan_threshold=settings.QDRANT_FULL_SCAN_THRESHOLD,
+            ),
         )
-        logger.info(f"Inserted {len(points)} embeddings into Qdrant successfully.")
-
+        logger.info(
+            "Qdrant collection created (m=%d, ef_construct=%d, full_scan_threshold=%d).",
+            settings.QDRANT_HNSW_M,
+            settings.QDRANT_HNSW_EF_CONSTRUCT,
+            settings.QDRANT_FULL_SCAN_THRESHOLD,
+        )
     except Exception as e:
-        logger.error(f"Failed to insert embeddings into Qdrant: {e}")
-        raise QdrantConnectionError(f"Qdrant insert failed: {e}")
+        logger.exception("Failed to ensure Qdrant collection: %s", e)
+        raise QdrantConnectionError(str(e))
 
-async def semantic_search(query_vector: list, top_k: int = 5, filter_payload: dict = None):
+
+async def upsert_points(points: List[PointStruct], batch_size: Optional[int] = None):
     """
-    Perform semantic search in Qdrant using a query vector.
+    Upsert points in batches.
+    """
+    try:
+        batch_size = batch_size or settings.QDRANT_UPSERT_BATCH_SIZE
+        n = len(points)
+        for i in range(0, n, batch_size):
+            chunk = points[i : i + batch_size]
+            await client.upsert(
+                collection_name=settings.QDRANT_COLLECTION,
+                points=chunk,
+            )
+        logger.info("Upserted %d points to Qdrant", n)
+    except Exception as e:
+        logger.exception("Qdrant upsert failed: %s", e)
+        raise QdrantConnectionError(str(e))
+
+
+async def semantic_search(
+    query_vector: List[float], top_k: int = 8, filter_payload: dict = None
+):
+    """
+    Perform semantic search using AsyncQdrantClient.
     """
     try:
         search_filter = None
         if filter_payload:
             search_filter = Filter(
                 must=[
-                    FieldCondition(key=key, match=MatchValue(value=value))
-                    for key, value in filter_payload.items()
+                    FieldCondition(key=k, match=MatchValue(value=v))
+                    for k, v in filter_payload.items()
                 ]
             )
-
-        result = qdrant_client.search(
+        result = await client.search(
             collection_name=settings.QDRANT_COLLECTION,
             query_vector=query_vector,
             limit=top_k,
@@ -115,5 +98,5 @@ async def semantic_search(query_vector: list, top_k: int = 5, filter_payload: di
         )
         return result
     except Exception as e:
-        logger.error(f"Qdrant semantic search failed: {e}")
-        raise QdrantConnectionError(f"Qdrant search failed: {e}")
+        logger.exception("Qdrant search failed: %s", e)
+        raise QdrantConnectionError(str(e))

@@ -33,11 +33,27 @@ class Settings:
     QDRANT_VECTOR_SIZE: int = int(os.getenv("QDRANT_VECTOR_SIZE", 768))
     QDRANT_DISTANCE: str = os.getenv("QDRANT_DISTANCE", "COSINE")
 
+    # HNSW Parameters
+    QDRANT_HNSW_M: int = int(os.getenv("QDRANT_HNSW_M", 32))
+    QDRANT_HNSW_EF_CONSTRUCT: int = int(os.getenv("QDRANT_HNSW_EF_CONSTRUCT", 128))
+    QDRANT_FULL_SCAN_THRESHOLD: int = int(
+        os.getenv("QDRANT_FULL_SCAN_THRESHOLD", 0)
+    ) or (10 * int(os.getenv("QDRANT_VECTOR_SIZE", 768)))  # ✅ Auto-tune fallback
+
     # Document Chunking
     CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", 512))
 
     # Debug & Logging
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+
+    # Search tuning
+    TOP_K: int = int(os.getenv("TOP_K", 8))
+    MIN_CHUNKS: int = int(os.getenv("MIN_CHUNKS", 3))
+    MIN_RELEVANCE: float = float(os.getenv("MIN_RELEVANCE", 0.6))
+
+    # Batching
+    EMBEDDINGS_BATCH_SIZE: int = int(os.getenv("EMBEDDINGS_BATCH_SIZE", 64))
+    QDRANT_UPSERT_BATCH_SIZE: int = int(os.getenv("QDRANT_UPSERT_BATCH_SIZE", 128))
 
 
 settings = Settings()

@@ -1,13 +1,14 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.models.document_model import DocumentUploadResponse
-from app.services.embeddings_service import generate_embedding
-from app.services.qdrant_service import insert_embeddings
+from app.services.embeddings_service import generate_embeddings_batch
+from app.services.qdrant_service import upsert_points, ensure_collection
 from app.utils.file_handler import save_uploaded_file, remove_file
 from app.utils.pdf_parser import extract_text_from_pdf
 from app.utils.text_splitter import split_text
 from app.utils.helpers import clean_text
 from app.core.config import settings
 from app.core.logger import logger
+from qdrant_client.http.models import PointStruct
 import uuid
 import os
 
@@ -15,16 +16,11 @@ router = APIRouter()
 
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(file: UploadFile = File(...)):
-    """
-    Upload a document, extract text, generate embeddings, and store them in Qdrant.
-    """
     file_path = None
     try:
-        # ✅ Save uploaded file
         file_path = await save_uploaded_file(file)
         logger.info(f"Uploaded file saved: {file_path}")
 
-        # ✅ Extract text based on file type
         if file.filename.endswith(".txt"):
             with open(file_path, "r", encoding="utf-8") as f:
                 full_text = f.read()
@@ -33,29 +29,27 @@ async def upload_document(file: UploadFile = File(...)):
         else:
             raise HTTPException(status_code=400, detail="Unsupported file format. Please upload PDF or TXT.")
 
-        # ✅ Clean and split text into chunks
         full_text = clean_text(full_text)
         chunks = split_text(full_text, settings.CHUNK_SIZE)
         logger.info(f"Extracted {len(chunks)} chunks from {file.filename}")
 
-        # ✅ Generate embeddings & prepare payloads
-        embeddings = []
-        payloads = []
-        for i, chunk in enumerate(chunks):
-            embedding = await generate_embedding(chunk)
-            embeddings.append(embedding)
-            payloads.append({
-                "id": str(uuid.uuid4()),
-                "content": chunk,
-                "source": file.filename,
-                "chunk_index": i
-            })
+        # Batch embeddings
+        texts = [c for c in chunks]
+        embeddings = await generate_embeddings_batch(texts, batch_size=settings.EMBEDDINGS_BATCH_SIZE)
 
-        # ✅ Store embeddings in Qdrant
-        await insert_embeddings(embeddings, payloads)
+        # Build Qdrant points
+        points = []
+        for i, vec in enumerate(embeddings):
+            payload = {"content": chunks[i], "source": file.filename, "chunk_index": i}
+            points.append(PointStruct(id=str(uuid.uuid4()), vector=vec, payload=payload))
+
+        # Ensure collection exists (idempotent)
+        await ensure_collection()
+
+        # Upsert in batches
+        await upsert_points(points, batch_size=settings.QDRANT_UPSERT_BATCH_SIZE)
         logger.info(f"Stored embeddings for {file.filename} successfully")
 
-        # ✅ Return response
         return DocumentUploadResponse(
             message=f"File '{file.filename}' uploaded and processed successfully.",
             chunks=len(chunks),
@@ -65,9 +59,8 @@ async def upload_document(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Upload failed: {e}")
+        logger.exception(f"Upload failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to process file: {e}")
     finally:
-        # ✅ Clean up file after processing to save disk space
         if file_path and os.path.exists(file_path):
             remove_file(file_path)

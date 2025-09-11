@@ -41,3 +41,7 @@ ollama==0.1.7
 
 # --- Environment Management ---
 python-decouple==3.8
+
+qdrant-client[aio]==1.11.1
+tenacity==8.2.2
+python-json-logger==2.0.4   # optional

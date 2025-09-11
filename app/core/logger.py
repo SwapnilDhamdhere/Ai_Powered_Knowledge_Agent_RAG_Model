@@ -1,31 +1,35 @@
 import logging
 import sys
+import json
 from app.core.config import settings
 
-def get_logger(name: str = "ai-knowledge-agent") -> logging.Logger:
-    """Creates a structured logger for the app."""
-    logger = logging.getLogger(name)
+class JsonFormatter(logging.Formatter):
+    def format(self, record):
+        record_dict = {
+            "time": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "logger": record.name,
+            "file": f"{record.filename}:{record.lineno}",
+            "message": record.getMessage()
+        }
+        # include extra fields if present
+        if hasattr(record, "request_id"):
+            record_dict["request_id"] = record.request_id
+        if hasattr(record, "duration"):
+            record_dict["duration"] = record.duration
+        return json.dumps(record_dict)
 
-    # Avoid duplicate handlers in interactive environments
+def get_logger(name: str = "ai-knowledge-agent"):
+    logger = logging.getLogger(name)
     if logger.handlers:
         return logger
 
-    # Log format
-    log_format = (
-        "%(asctime)s | %(levelname)-8s | %(name)s | "
-        "%(filename)s:%(lineno)d | %(message)s"
-    )
-
-    # Set level based on DEBUG mode
     level = logging.DEBUG if settings.DEBUG else logging.INFO
     logger.setLevel(level)
 
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(logging.Formatter(log_format))
-    logger.addHandler(console_handler)
-
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setFormatter(JsonFormatter())
+    logger.addHandler(ch)
     return logger
 
-# Global app logger
 logger = get_logger()
