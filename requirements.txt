@@ -45,3 +45,11 @@ python-decouple==3.8
 qdrant-client[aio]==1.11.1
 tenacity==8.2.2
 python-json-logger==2.0.4   # optional
+
+# Web search dependencies
+beautifulsoup4>=4.12.2
+lxml>=4.9.3
+
+# test
+pytest-asyncio
+ddgs

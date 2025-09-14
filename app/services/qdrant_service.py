@@ -79,7 +79,7 @@ async def semantic_search(
     query_vector: List[float], top_k: int = 8, filter_payload: dict = None
 ):
     """
-    Perform semantic search using AsyncQdrantClient.
+    Perform semantic (vector) search.
     """
     try:
         search_filter = None
@@ -98,5 +98,38 @@ async def semantic_search(
         )
         return result
     except Exception as e:
-        logger.exception("Qdrant search failed: %s", e)
+        logger.exception("Qdrant semantic search failed: %s", e)
         raise QdrantConnectionError(str(e))
+
+
+async def keyword_search(query: str, top_k: int = 8):
+    """
+    Perform keyword-based search using payload filtering (simple text match).
+    """
+    try:
+        # Uses scroll to find matches in payload
+        points, _ = await client.scroll(
+            collection_name=settings.QDRANT_COLLECTION,
+            scroll_filter=Filter(
+                must=[FieldCondition(key="content", match=MatchValue(value=query))]
+            ),
+            limit=top_k,
+        )
+        return points
+    except Exception as e:
+        logger.exception("Qdrant keyword search failed: %s", e)
+        raise QdrantConnectionError(str(e))
+
+
+def merge_results(semantic: List, keyword: List, top_k: int = 8):
+    """
+    Merge semantic + keyword results with simple reranking.
+    """
+    combined = {str(r.id): r for r in semantic}  # start with semantic
+    for r in keyword:
+        combined[str(r.id)] = r  # keyword may add new or overwrite
+
+    # Sort by score (higher is better) and return top_k
+    return sorted(
+        combined.values(), key=lambda x: getattr(x, "score", 0), reverse=True
+    )[:top_k]

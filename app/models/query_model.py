@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List
 
 
@@ -8,19 +8,21 @@ class AskQuery(BaseModel):
     """
     query: str
 
+
 class SourceInfo(BaseModel):
     """
     Represents a reference to a document chunk used in the answer.
     """
     document: str
-    chunks_used: List[int]
-    relevance: float  # Optional: can represent semantic similarity score
+    chunks_used: List[int] = Field(default_factory=list)  # ✅ safe default
+    relevance: float = 0.0  # ✅ default to 0.0 so None won’t break validation
+
 
 class AskResponse(BaseModel):
     """
     Response model for the /api/ask endpoint.
     """
     answer: str
-    sources: List[SourceInfo]  # Structured list of document references
+    sources: List[SourceInfo] = Field(default_factory=list)  # ✅ safe default
     generated_by: str          # "Hybrid (Docs + AI)" or "AI-only"
-    confidence: float          # Optional: overall confidence score of the answer
+    confidence: float = 0.0    # ✅ default confidence

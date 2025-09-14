@@ -55,5 +55,8 @@ class Settings:
     EMBEDDINGS_BATCH_SIZE: int = int(os.getenv("EMBEDDINGS_BATCH_SIZE", 64))
     QDRANT_UPSERT_BATCH_SIZE: int = int(os.getenv("QDRANT_UPSERT_BATCH_SIZE", 128))
 
+    # Search mode: "semantic" or "hybrid"
+    SEARCH_MODE: str = os.getenv("SEARCH_MODE", "hybrid").lower()
+
 
 settings = Settings()

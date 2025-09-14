@@ -6,6 +6,7 @@ from app.utils.file_handler import save_uploaded_file, remove_file
 from app.utils.pdf_parser import extract_text_from_pdf
 from app.utils.text_splitter import split_text
 from app.utils.helpers import clean_text
+from app.utils.semantic_chunker import semantic_chunk_text
 from app.core.config import settings
 from app.core.logger import logger
 from qdrant_client.http.models import PointStruct
@@ -30,7 +31,8 @@ async def upload_document(file: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail="Unsupported file format. Please upload PDF or TXT.")
 
         full_text = clean_text(full_text)
-        chunks = split_text(full_text, settings.CHUNK_SIZE)
+        # chunks = split_text(full_text, settings.CHUNK_SIZE)
+        chunks = await semantic_chunk_text(full_text, max_tokens=settings.CHUNK_SIZE)
         logger.info(f"Extracted {len(chunks)} chunks from {file.filename}")
 
         # Batch embeddings

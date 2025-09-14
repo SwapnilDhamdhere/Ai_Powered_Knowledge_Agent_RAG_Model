@@ -21,7 +21,9 @@ async def ask_ai(query: AskQuery):
         # ✅ Perform semantic search & LLM-based answer generation
         result = await search_knowledge_base(cleaned_query)
 
-        # ✅ Return the structured AI response
+        # ✅ Return directly if already AskResponse
+        if isinstance(result, AskResponse):
+            return result
         return AskResponse(**result)
 
     except HTTPException:
