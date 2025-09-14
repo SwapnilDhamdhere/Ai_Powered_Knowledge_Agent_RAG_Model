@@ -14,5 +14,3 @@ def get_async_qdrant_client() -> AsyncQdrantClient:
             prefer_grpc=False  # set True if you configured gRPC
         )
     return _async_client
-
-#check
