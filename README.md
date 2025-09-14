@@ -14,6 +14,22 @@
 
 ---
 
+## 🔄 Query Flow
+
+The agent decides the best path for answering queries:
+
+1. **Qdrant (Vector Search)** → Retrieve relevant document chunks only. If context is found, this is combined with AI reasoning.
+2. **AI‑Only (LLM)** → If no documents match or user requests a general answer, Ollama GPT‑OSS generates the response without RAG.
+3. **AI + Web (Fallback)** → If additional knowledge is needed beyond documents + LLM, the agent can query the web for fresh or missing information.
+
+This flow ensures maximum coverage and reliability:
+
+* **Qdrant → AI+Docs**: Best for context‑rich answers grounded in your documents.
+* **AI‑Only**: Ideal for general knowledge questions.
+* **AI+Web**: Useful for up‑to‑date information or missing context.
+
+---
+
 ## ✨ Features
 
 * 📄 **Document Upload** — Upload and index documents (PDF, TXT).
@@ -202,6 +218,7 @@ ai-knowledge-agent/
 * 🐳 Provide Docker Compose for full stack deployment
 * 🔄 Improve retry logic & error handling
 * ✅ Unit tests for services & routes
+* 🌐 Add AI+Web fallback integration (live search)
 
 ---
 
