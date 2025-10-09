@@ -3,15 +3,23 @@ import json
 from app.core.config import settings
 from app.core.logger import logger
 from app.core.exceptions import OllamaConnectionError
+from app.services.prompt_builder_service import PromptBuilder
 
 # Ollama API endpoint (local)
 OLLAMA_BASE_URL = "http://localhost:11434"
 
-async def generate_answer(context: str, query: str) -> str:
+async def generate_answer(context: str, query: str, intent: str = None) -> str:
     """
     Generate a contextual answer using Ollama LLM.
     Returns "NO_ANSWER" if the LLM cannot answer based on the context.
     """
+    prompt_builder = PromptBuilder()
+    messages = (
+        prompt_builder.build_with_intent(context, query, intent)
+        if intent
+        else prompt_builder.build_prompt(context, query)
+    )
+
     try:
         async with httpx.AsyncClient(timeout=600) as client:
             response = await client.post(

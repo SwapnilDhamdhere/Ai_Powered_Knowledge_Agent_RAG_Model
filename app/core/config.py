@@ -25,6 +25,7 @@ class Settings:
     OLLAMA_CHAT_URL: str = f"{OLLAMA_HOST}/api/chat"
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
     OLLAMA_EMBEDDINGS_MODEL: str = os.getenv("OLLAMA_MODEL", "nomic-embed-text")
+    OLLAMA_INTENT_MODEL: str = os.getenv("OLLAMA_INTENT_MODEL", "llama3.2:3b")
 
     # Qdrant Config
     QDRANT_HOST: str = os.getenv("QDRANT_HOST", "localhost")
